@@ -1,8 +1,31 @@
 from __future__ import print_function
 from scipy.sparse import csr_matrix
 from scipy.sparse import coo_matrix
-import hams
+
 import numpy as np
+cimport numpy as np
+np.import_array()
+
+cdef double double_tol = 2e-16 
+
+def find_state_with_tag(tag, tag_list):
+    ''' finds the location of state in tag_list using binary search.
+    tag_list must be sorted.
+    Returns idx such that tag_list[idx] = tag '''
+    cdef int bm = 0
+    cdef int bM = np.shape(tag_list)[0]-1
+    cdef int b = 0
+    while(bm <= bM):
+        b = int((bM + bm)/2)
+        if tag < (tag_list[b] - double_tol):
+            bM = b-1
+        elif tag > (tag_list[b] + double_tol):
+            bm = b+1
+        else:
+            return b
+    print('State with tag %f not found! Tolerance: %f'%(tag, double_tol))
+    raise NameError('Couldnt find state with tag %f'%tag)
+    return None
 
 def create_fermionic_hopping_operator_ij_sigma(i, j, sigma, vecs_sorted, tags_sorted):
     # a_i^\dagger a_j (for spin sigma = 0 or 1)
@@ -51,7 +74,7 @@ def create_fermionic_hopping_operator_ij_sigma(i, j, sigma, vecs_sorted, tags_so
                 #tag = tag_state_FH(vec1, N_sites)
                 tag = np.sum(temp * (vec1).astype(np.float64))
                 try:
-                    idx1 = hams.find_state_with_tag(tag, tags_sorted)
+                    idx1 = find_state_with_tag(tag, tags_sorted)
                 except NameError:
                     print('idx: %d'%idx)
                     print('vec: ', vecs_sorted[idx])

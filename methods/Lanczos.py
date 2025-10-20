@@ -536,10 +536,12 @@ def Lanczos_diagonalize_mat(H_func_mat, init_state, max_iter = 100):
     a0,n1 = _Lanczos_iterate_compute(H_func_mat,phi2, phi1, phi0, 0)
     a_list.append(a0)
     n_list.append(n1)
+    # print(a0,n1)
     for i in range(1, max_iter):
         ai,ni1 = _Lanczos_iterate_compute(H_func_mat,phi2, phi1, phi0, i, n_list[i]) 
         a_list.append(ai)
         n_list.append(ni1)
+        # print(ai,ni1)
         
         # these should all just be pointers so no copying happening
         temp = phi0

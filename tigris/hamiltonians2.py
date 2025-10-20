@@ -8,9 +8,8 @@ from scipy.special import comb
 import scipy
 
 
-import hop_op_FH
+from tigris.cython_files import hop_op_FH
 import multiprocessing
-import hams
 
 def flip_bit_fast(n, i):
     mask = 1<<i
@@ -331,7 +330,7 @@ def create_fermionic_hopping_operator_ij_sigma(i, j, sigma, vecs_sorted, tags_so
                 #tag = tag_state_FH(vec1, N_sites)
                 tag = np.sum(temp * (vec1).astype(np.float64))
                 try:
-                    idx1 = hams.find_state_with_tag(tag, tags_sorted)
+                    idx1 = find_state_with_tag(tag, tags_sorted)
                 except NameError:
                     print('idx: %d'%idx)
                     print('vec: ', vecs_sorted[idx])

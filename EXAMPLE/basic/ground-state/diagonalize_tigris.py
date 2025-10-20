@@ -1,9 +1,9 @@
-import leo.hamiltonians3 as hamiltonians3
+import tigris.hamiltonians2 as hamiltonians2
+from tigris import measurements_FH
 import methods.Lanczos as Lanczos
-from leo.hamiltonian_helper import *
 from pathlib import Path
 import gc
-import leo.cython_files.hop_op_FH as hop_op_FH
+import tigris.cython_files.hop_op_FH as hop_op_FH
 import os
 import scipy
 import time
@@ -13,7 +13,6 @@ import sys
 import numpy as np
 from scipy.special import comb
 from methods.geometry import *
-from leo import measurements_FH
 import random
 
 show_plots = True
@@ -87,45 +86,6 @@ def make_geometry(boundary):
     return connectivity_list, folder_name, geom_dict
 
 
-def make_geometry_x(boundary):
-    
-    cvecs = [ce1, -ce1]
-
-    if boundary == "PBC":
-        connectivity_list = generate_connectivity_list(sites, sdict, lines, Tvecs, cvecs, e1, e2)
-    else:
-        connectivity_list = generate_connectivity_list_OBC(sites, sdict, lines, Tvecs, cvecs, e1, e2)
-    
-    
-    if show_plots:
-        print(connectivity_list)
-        # print('Here')
-        fig, ax = plt.subplots()
-        if boundary == "PBC":
-            ax.arrow(0,0, *(Tvecs[0][0]*e1 + Tvecs[0][1]*e2), width=0.08, zorder=1.)
-            ax.arrow(0,0, *(Tvecs[2][0]*e1 + Tvecs[2][1]*e2), width=0.08, zorder=1.)
-
-        for i, (xi,yi) in enumerate(sites):
-            x,y = xi*e1 + yi*e2
-            for s1 in connectivity_list[i]:
-                x1, y1 = sites[s1][0]*e1 + sites[s1][1]*e2
-                ax.arrow(x,y,x1-x, y1-y,color='black', zorder=1.0)
-
-        for i, (xi,yi) in enumerate(sites):
-            x,y = xi*e1 + yi*e2
-            s = plt.Circle((x,y), 0.4, fc='lightskyblue', ec='darkblue', alpha=0.9, zorder=1000.)
-            ax.add_patch(s)
-            ax.text(x,y, "%d"%i, ha='center', va='center', size=10, zorder=10001.)
-        plt.xlim(-1,5)
-        plt.ylim(-1,5)
-        # plt.xlim(-0.5,4)
-        # plt.ylim(-4.5,1.5)
-
-        ax.set_aspect('equal')
-        plt.axis('off')
-        plt.show()
-    return connectivity_list
-
 
 def make_measurements_list(geom_dict):
     cvecs = geom_dict['cvecs']
@@ -151,13 +111,7 @@ def make_measurements_list(geom_dict):
                                         cvecs[2:], geom_dict['e1'], geom_dict['e2'])
         
     quantities = [
-            #   (measurements_FH.create_doublon_func_i,(4,)),
-            #   (measurements_FH.create_density_func_i,(4,)),
-            #   (measurements_FH.create_Sz_func_i,(4,)),
-            #   (measurements_FH.create_Sz_func_i,(5,)),
-            #   (measurements_FH.create_Sz_func_i,(2,)),
-            #   (measurements_FH.create_singles_func,()),
-            #   (measurements_FH.create_SzSz_func,(NN1_bonds+NN2_bonds,)),
+
               (measurements_FH.create_SzSz_func_sites,(0,1,)),
               (measurements_FH.create_SzSz_func_sites,(0,2,)),
               (measurements_FH.create_SzSz_func_sites,(0,3,)),
@@ -175,6 +129,16 @@ def make_measurements_list(geom_dict):
     ]
     return quantities
 
+def create_H_func(H_kin, H_int):
+    def apply_H(state, out=None):
+        if out is None:
+            result = np.zeros(np.shape(state))
+        else:
+            out *= 0
+            result = out
+        result += (H_kin+H_int)@state
+        return result
+    return apply_H
 
 def make_hamiltonian_and_diagonalize(N_sites, N_up, N_down, U, connectivity_list, Operator_list, N_states=100):
     '''
@@ -187,23 +151,21 @@ def make_hamiltonian_and_diagonalize(N_sites, N_up, N_down, U, connectivity_list
     N_cutoff = 500 # dense ED to sparse ED cutoff
 
     tic0 = time.time()
-    states_up    = hamiltonians3.generate_N_sector_states_FH(N_sites,N_up)
-    states_down  = hamiltonians3.generate_N_sector_states_FH(N_sites,N_down)
+    vecs, tags = hamiltonians2.generate_state_vecs_and_tags_FH(N_sites, N_up, N_down)
     tic1 = time.time()
     print(f'Made states lists in {tic1-tic0} seconds')
-    states_lists = [states_up, states_down]
-    hop_op_list  = hamiltonians3.create_fermionic_hopping_operators_from_conn_list(states_lists, connectivity_list)
-    dimH_up, dimH_down = np.shape(hop_op_list[0][0][0])[0], np.shape(hop_op_list[1][0][0])[0]
-    dimH = dimH_up*dimH_down
-    Hku, Hkd = hamiltonians3.create_H_kin_FH(1.0, hop_op_list, connectivity_list)
-    Hi = hamiltonians3.create_H_int_FH(U, hop_op_list)
+    
+    hop_op_list  = hamiltonians2.create_fermionic_hopping_operators_from_conn_list(vecs, tags, connectivity_list)
+    H_kin = hamiltonians2.create_H_FH_kin_from_conn_list(1, hop_op_list, connectivity_list)
+    H_int = hamiltonians2.create_H_FH_int(U, hop_op_list)
+    dimH = np.shape(H_int)[0]
     tic2 = time.time()
     print(f'Made Hamiltonians in {tic2-tic1} seconds')
 
     Op_list = [[] for q in Operator_list]
     qnames = []
     for q_i, (func,args) in enumerate(Operator_list):
-        Op_list[q_i] = func(hop_op_list, states_lists, *args)
+        Op_list[q_i] = func(hop_op_list, vecs, tags, *args)
         qnames.append(str(func.__name__)+str(args))
     tic3 = time.time()
     print(f'Made Operators in {tic3-tic2} seconds')
@@ -211,7 +173,7 @@ def make_hamiltonian_and_diagonalize(N_sites, N_up, N_down, U, connectivity_list
     if dimH > N_cutoff:
         print(f'Starting lanczos for ({N_sites},{N_up},{N_down}): {dimH}')
         
-        H_func = create_H_func_new(Hku, Hkd, Hi)
+        H_func = create_H_func(H_kin, H_int)
 
         tic = time.time()
         psi = np.random.uniform(-1,1, size = dimH)
@@ -223,21 +185,15 @@ def make_hamiltonian_and_diagonalize(N_sites, N_up, N_down, U, connectivity_list
 
         tic = time.time()
         gs = Lanczos.reconstruct_Lanczos_vector(H_func, psi_copy, evecs[:,0], a_list, n_list)
-        gs.shape=(dimH_up, dimH_down)
         toc = time.time()
         print(f'Reconstructed state vector in {toc-tic} seconds')
 
 
     else:
         print(f'Starting dense ED for ({N_sites},{N_up},{N_down}): {dimH}')
-        H = np.zeros((dimH, dimH))
-        Iden_u = np.identity(np.shape(hop_op_list[0][0][0])[0])
-        Iden_d = np.identity(np.shape(hop_op_list[1][0][0])[0])
-        H += np.kron(Hku.toarray(), Iden_d) + np.kron(Iden_u, Hkd.toarray())
-        H += np.diag(Hi.reshape(dimH))
+        H = H_kin.toarray() + H_int.toarray()
         eigvals, eigvecs = scipy.linalg.eigh(H)
         gs = eigvecs[:,0]
-        gs.shape=(dimH_up, dimH_down)
     
     measurements = [np.sum(np.multiply(gs, Op(gs))) for Op in Op_list]
     toc0 = time.time()
@@ -248,7 +204,6 @@ def make_hamiltonian_and_diagonalize(N_sites, N_up, N_down, U, connectivity_list
 if __name__== '__main__':
     bc = "OBC"
     connectivity_list, folder_name, geom_dict = make_geometry(bc)
-    conx = make_geometry_x(bc)
     
     N_sites = len(connectivity_list)
     
