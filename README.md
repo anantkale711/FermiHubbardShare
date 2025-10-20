@@ -1,0 +1,2 @@
+# FermiHubbardShare
+exact diagonalization repo 
