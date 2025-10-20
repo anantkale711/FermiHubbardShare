@@ -1,0 +1,43 @@
+import numpy as np
+cimport numpy as cnp
+cnp.import_array()
+
+DTYPE = np.float64
+ctypedef cnp.float64_t DTYPE_t
+
+cdef long get_bit_j_fast(long n, int j):
+    cdef long temp = n>>j
+    cdef long mask = 1
+    cdef long result = temp & mask
+    return result
+
+def apply_SzSz_Cloop(cnp.ndarray psi, int[:,:] ij_list, cnp.ndarray states_up, cnp.ndarray states_down):
+    cdef size_t dimH_up = states_up.shape[0]
+    cdef size_t dimH_down = states_down.shape[0]
+    psi_mat = psi.reshape(dimH_up, dimH_down)
+    cdef float64_t[:,:] psi_mat_view = psi_mat
+    psi_res_mat = np.zeros((dimH_up, dimH_down), dtype=DTYPE)
+    cdef float64_t[:,:] psi_res_mat_view = psi_res_mat
+    
+    cdef double result = 0, resi = 0, resj = 0
+
+    cdef long u = 0, d = 0
+    cdef long su, sd, 
+    cdef int nui, nuj, ndi, ndj
+    cdef double temp = 0.0
+    for u in range(dimH_up):
+        su = states_up[u]
+        nui = get_bit_j_fast(su, i)
+        nuj = get_bit_j_fast(su, j)
+        for d in range(dimH_down):
+            sd = states_down[d]
+            ndi = get_bit_j_fast(sd, i)
+            ndj = get_bit_j_fast(sd, j)
+            temp = abs(psi_mat[u,d])**2
+            
+            result += (nui - ndi)*(nuj-ndj)* temp
+            resi   += (nui - ndi)*temp
+            resj   += (nuj-ndj)  *temp
+            
+    return result - resi * resj
+

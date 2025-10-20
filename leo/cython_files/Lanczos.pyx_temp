@@ -1,0 +1,205 @@
+from __future__ import print_function
+import numpy as np
+cimport numpy as np
+np.import_array()
+import scipy.linalg
+from libc.math cimport fabs
+
+
+# def Lanczos_diagonalize(H_func, init_state, n_eigvals = 6, max_iter = 1000, tol =1e-10, verbose = False):
+#     eigvals_list = []
+#     a_list = []
+#     n_list = [None]
+    
+#     phi0  = init_state
+#     phi1  = np.zeros(len(phi0))
+#     phi2  = np.zeros(len(phi0))
+    
+#     H_func(init_state, out = phi1)
+#     a0    = np.dot(phi0, phi1)  # all elements are real so no need to do vdot
+    
+#     #phi1 = phi1 - a0 * phi0   #implemented inplace
+#     np.subtract(phi1, a0 * phi0, out = phi1)
+#     n1    = np.sqrt(np.dot(phi1, phi1))
+#     phi1 /= n1
+    
+#     a_list.append(a0)
+#     n_list.append(n1)
+    
+#     #print(np.dot(phi1, phi1))
+    
+#     for i in range(1, max_iter):
+#         H_func(phi1, out = phi2)
+#         ai = np.dot(phi1, phi2)
+#         ni = n_list[i]
+#         #phi2 = phi2 - ai * phi1  - ni * phi0  
+#         np.subtract(phi2, ai * phi1, out = phi2)
+#         np.subtract(phi2, ni * phi0, out = phi2)
+#         ni1 = np.sqrt(np.dot(phi2, phi2))
+#         phi2 /= ni1
+        
+        
+#         #print(np.dot(phi2, phi2), ', ', ai, ', ', ni1)
+        
+#         a_list.append(ai)
+#         n_list.append(ni1)
+        
+#         # these should all just be pointers so no copying happening
+#         temp = phi0
+#         phi0 = phi1
+#         phi1 = phi2
+#         phi2 = temp
+        
+# #         print(a_list)
+# #         print(n_list)
+#         eigvals, eigvecs = scipy.linalg.eigh_tridiagonal(a_list, n_list[1:-1]) #diagonalize_tridiagonal(a_list, n_list)
+#         eigvals_list.append(eigvals[:n_eigvals])
+#         #print(eigvals_list[-1])
+#         if (i < n_eigvals+2): 
+#             continue
+#         if np.max(np.abs(eigvals_list[-1] - eigvals_list[-2])) < tol:
+#             print(i)
+#             if verbose: 
+#                 return eigvals_list, eigvecs[:,:n_eigvals], a_list, n_list
+#             return eigvals_list[i], eigvecs[:,:n_eigvals], a_list, n_list
+#     print('Reached max iterations, may not have converged eigvals!')
+#     if verbose: 
+#         return eigvals_list, eigvecs[:,:n_eigvals], a_list, n_list
+#     return eigvals_list[-1], eigvecs[:,:n_eigvals], a_list, n_list
+
+
+# def reconstruct_Lanczos_vector(H_func, init_state, vecs, a_list, n_list, out_list = None):
+#     if len(vecs.shape)==1:
+#         vecs = vecs.reshape(-1,1)
+#     Nv = vecs.shape[1]
+#     if out_list is None:
+#         psi_out_list = [np.zeros(len(init_state)) for j in range(Nv)]
+#     else: 
+#         for out in out_list:
+#             out*= 0
+#         psi_out_list = out_list
+    
+#     phi0  = init_state
+#     phi1  = np.zeros(len(phi0))
+#     phi2  = np.zeros(len(phi0))
+    
+#     for j in range(Nv):
+#         psi_out_list[j] += phi0 * vecs[0,j]
+    
+#     H_func(init_state, out = phi1)
+#     #phi1 = phi1 - a0 * phi0   #implemented inplace
+#     np.subtract(phi1, a_list[0] * phi0, out = phi1)
+#     phi1 /= n_list[1]
+    
+#     for j in range(Nv):
+#         psi_out_list[j] += phi1 * vecs[1,j]
+        
+#     for i in range(1, len(a_list)-1):
+#         H_func(phi1, out = phi2)
+#         #phi2 = phi2 - ai * phi1  - ni * phi0  
+#         np.subtract(phi2, a_list[i] * phi1, out = phi2)
+#         np.subtract(phi2, n_list[i] * phi0, out = phi2)
+#         phi2 /= n_list[i+1]
+        
+#         for j in range(Nv):
+#             psi_out_list[j] += phi2 * vecs[i+1,j]
+
+#         # these should all just be pointers so no copying happening
+#         temp = phi0
+#         phi0 = phi1
+#         phi1 = phi2
+#         phi2 = temp
+#     if Nv == 1:
+#         return psi_out_list[0]
+#     else:
+#         return psi_out_list
+
+def Lanczos_finite_temp(H_func, init_state, Op_list, int  n_eigvals = 2, int max_iter = 100, double tol=1e-10):
+    if not isinstance(Op_list, list):
+        Op_list = [Op_list]
+    
+    cdef int N_ops=len(Op_list)
+    a_list = np.zeros(max_iter+1)
+    n_list = np.zeros(max_iter+1)
+    overlaps_list = np.empty((max_iter, N_ops))
+
+    cdef:
+        np.intp_t it_i=0, n_i=0, dimH = np.shape(init_state)[0]
+        double [:,:] overlaps_view = overlaps_list
+        list Op_psi_list = [None]*N_ops
+        double a0=0, ai=0, n1=0, ni=0, ni1 = 0
+        double [:] a_view = a_list
+        double [:] n_view = n_list
+        double [:,:] eigvals_list = np.zeros((max_iter, n_eigvals))
+        double converge_err = 0, converge_err_max = 0
+    
+    phi0 = init_state
+    phi1 = np.zeros(dimH)
+    phi2 = np.zeros(dimH)
+        
+
+    for n_i in range(N_ops):
+        Op_psi_list[n_i] = Op_list[n_i](init_state)   
+        overlaps_view[0,n_i] = np.dot(phi0, Op_psi_list[n_i])
+    
+    H_func(init_state, out = phi1)
+    a0    = np.dot(phi0, phi1)  # all elements are real so no need to do vdot
+    
+    #phi1 = phi1 - a0 * phi0   #implemented inplace
+    np.subtract(phi1, a0 * phi0, out = phi1)
+    n1    = np.sqrt(np.dot(phi1, phi1))
+    phi1 /= n1
+    
+    
+    a_view[0] = a0
+    n_view[1] = n1
+    
+    for it_i in range(1, max_iter):
+        for n_i in range(N_ops):
+            overlaps_view[it_i,n_i] = np.dot(phi1, Op_psi_list[n_i])
+        
+        H_func(phi1, out = phi2)
+        ai = np.dot(phi1, phi2)
+        ni = n_view[it_i]
+        #phi2 = phi2 - ai * phi1  - ni * phi0  
+        np.subtract(phi2, ai * phi1, out = phi2)
+        np.subtract(phi2, ni * phi0, out = phi2)
+        ni1 = np.sqrt(np.dot(phi2, phi2))
+        phi2 /= ni1
+        
+        
+        #print(np.dot(phi2, phi2), ', ', ai, ', ', ni1)
+        
+        a_view[it_i] = ai
+        n_view[it_i+1] = ni1
+        
+        # these should all just be pointers so no copying happening
+        temp = phi0
+        phi0 = phi1
+        phi1 = phi2
+        phi2 = temp
+        
+#         print(a_list)
+#         print(n_list)
+        eigvals, eigvecs = scipy.linalg.eigh_tridiagonal(a_list[:it_i+1], n_list[1:it_i+1]) #diagonalize_tridiagonal(a_list, n_list)
+        # eigvals_list.append(eigvals[:])
+
+        for n_i in range(min(n_eigvals, len(eigvals))):
+            eigvals_list[it_i,n_i] = eigvals[n_i]
+        
+        #print(eigvals_list[-1])
+        if (it_i < n_eigvals+2): 
+            continue
+        
+        converge_err = 0
+        converge_err_max = -1.
+        for n_i in range(n_eigvals):
+            converge_err = fabs(eigvals_list[it_i,n_i]-eigvals_list[it_i-1,n_i])
+            if converge_err > converge_err_max:
+                converge_err_max = converge_err
+        if converge_err_max < tol:
+            #print(converge_err_max)
+            return eigvals, eigvecs[:,:], overlaps_list[:it_i+1], a_list[:it_i+1], n_list[:it_i+1]
+    #print('Reached max iterations (may not have converged eigvals!)')
+    return eigvals, eigvecs[:,:], overlaps_list, a_list, n_list
+    
