@@ -1,15 +1,2 @@
-# exclude all files in the lieb_lattice/raw_data folder
-lieb_lattice/raw_data/
-lieb_lattice/ED_data/
-
-# exclude all files in the nagaoka_numerics/ED_data folder
-nagaoka_numerics/ED_data/
-
-# exclude all files in the nagaoka_numerics/ED_data folder
-square_lattice/ED_data/
-square_lattice/dynamical_response_FTLM/mat_test/
-
-# exclude all files in the old_code/sim_data folder
-old_code/sim_data/
-
+# Exclude any raw data in any folder
 */raw_data/
